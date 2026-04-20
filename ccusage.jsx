@@ -490,6 +490,7 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx 
     textTransform: 'uppercase',
     borderRadius: 999,
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
     background: active ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.04)',
     color: active ? '#ffffff' : 'rgba(255,255,255,0.45)',
     border: active ? '0.5px solid rgba(255,255,255,0.28)' : '0.5px solid rgba(255,255,255,0.06)',
@@ -539,7 +540,7 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx 
             onClick={() => dispatch({ type: 'SET_WEEKDAYS', value: !wdOnly })}
             title={wdOnly ? 'showing weekdays only' : 'showing all days'}
           >
-            {wdOnly ? 'Mon–Fri' : 'All days'}
+            {wdOnly ? '5d' : '7d'}
           </div>
         )}
       </div>
