@@ -11,7 +11,7 @@ Minimal macOS desktop widget that shows your Claude Code token spend as a bar ch
   - **Daily** — 7-day bar chart with Mon–Fri toggle
   - **Weekly** — sparkline + mini histogram, last 12 weeks
   - **Hotspot** — day × hour activity heatmap with peak callout
-  - **Friends** — optional leaderboard ranked by 7-day messages
+  - **Friends** — optional leaderboard ranked by 7-day tokens
 - Avg, EOM projection, cache-hit % in the footer
 - Bars turn orange when a day crosses $100 (or a week crosses $300)
 - Drag the header to move, drag the bottom-right corner to resize — position and size persist
@@ -76,7 +76,7 @@ Both are handled in `ccusage.jsx`.
 
 ## Leaderboard (optional)
 
-Friends-only ranking on the "Friends" tab — all participants' widgets pull from a shared private GitHub repo and show each other's 7-day message counts.
+Friends-only ranking on the "Friends" tab — all participants' widgets pull from a shared private GitHub repo and show each other's 7-day token totals.
 
 ### Set up your own group
 
@@ -106,10 +106,11 @@ Friends-only ranking on the "Friends" tab — all participants' widgets pull fro
 Each participant's `stats/{handle}.json`:
 
 - `handle`, `last7dMsgs`, `last30dMsgs`, `totalMsgs`, `streak`
+- `last7dTokens`, `last30dTokens`, `totalTokens`
 - `peakDay` (0=Sun) and `peakHour` (0–23)
 - `updatedAt`
 
-**Not shared:** cost, tokens, project names, prompt/completion content. The widget never reads message content from `~/.claude/projects/**` — only timestamps.
+**Not shared:** cost, project names, prompt/completion content. The widget never reads message content from `~/.claude/projects/**` — only timestamps; token counts come from ccusage's per-day totals.
 
 ### Redact fields
 

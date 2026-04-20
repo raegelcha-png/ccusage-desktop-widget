@@ -85,6 +85,15 @@ daily.hotspot = {
   generatedAt: new Date().toISOString()
 }
 
+const dailyTokens = new Map()
+let totalTokens = 0
+for (const d of (daily.daily || [])) {
+  if (!d || !d.date) continue
+  const t = d.totalTokens || 0
+  dailyTokens.set(d.date, t)
+  totalTokens += t
+}
+
 function computeMyStats() {
   const today = new Date()
   const keyFor = (offset) => {
@@ -93,8 +102,15 @@ function computeMyStats() {
     return d.toISOString().slice(0, 10)
   }
   let last7dMsgs = 0, last30dMsgs = 0
-  for (let i = 0; i < 7; i++) last7dMsgs += dailyMsgs.get(keyFor(i)) || 0
-  for (let i = 0; i < 30; i++) last30dMsgs += dailyMsgs.get(keyFor(i)) || 0
+  let last7dTokens = 0, last30dTokens = 0
+  for (let i = 0; i < 7; i++) {
+    last7dMsgs += dailyMsgs.get(keyFor(i)) || 0
+    last7dTokens += dailyTokens.get(keyFor(i)) || 0
+  }
+  for (let i = 0; i < 30; i++) {
+    last30dMsgs += dailyMsgs.get(keyFor(i)) || 0
+    last30dTokens += dailyTokens.get(keyFor(i)) || 0
+  }
   let streak = 0
   for (let i = 0; i < 365; i++) {
     if ((dailyMsgs.get(keyFor(i)) || 0) > 0) streak++
@@ -104,6 +120,9 @@ function computeMyStats() {
     last7dMsgs,
     last30dMsgs,
     totalMsgs: total,
+    last7dTokens,
+    last30dTokens,
+    totalTokens,
     streak,
     peakDay: topDay,
     peakHour: topHour,

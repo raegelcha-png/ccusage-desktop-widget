@@ -252,6 +252,14 @@ const Heatmap = ({ hotspot, w }) => {
   )
 }
 
+const fmtTokens = (n) => {
+  if (!n) return '0'
+  if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 0 : 1) + 'B'
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'k'
+  return String(n)
+}
+
 const Leaderboard = ({ lb, w }) => {
   if (!lb || !lb.participants || !lb.participants.length) {
     return (
@@ -267,14 +275,14 @@ const Leaderboard = ({ lb, w }) => {
     )
   }
   const me = lb.myHandle
-  const sorted = [...lb.participants].sort((a, b) => (b.last7dMsgs || 0) - (a.last7dMsgs || 0))
-  const max = Math.max(...sorted.map(p => p.last7dMsgs || 0), 1)
+  const sorted = [...lb.participants].sort((a, b) => (b.last7dTokens || 0) - (a.last7dTokens || 0))
+  const max = Math.max(...sorted.map(p => p.last7dTokens || 0), 1)
   const myRank = sorted.findIndex(p => p.handle === me) + 1
   return (
     <div>
       {sorted.slice(0, 8).map((p, i) => {
         const isMe = p.handle === me
-        const pct = ((p.last7dMsgs || 0) / max) * 100
+        const pct = ((p.last7dTokens || 0) / max) * 100
         const rank = i + 1
         return (
           <div key={p.handle} style={{
@@ -327,7 +335,7 @@ const Leaderboard = ({ lb, w }) => {
               fontVariantNumeric: 'tabular-nums',
               fontWeight: isMe ? 600 : 400
             }}>
-              {(p.last7dMsgs || 0).toLocaleString()}
+              {fmtTokens(p.last7dTokens || 0)}
             </div>
           </div>
         )
@@ -341,7 +349,7 @@ const Leaderboard = ({ lb, w }) => {
         letterSpacing: 0.3,
         fontVariantNumeric: 'tabular-nums'
       }}>
-        <span>7-day messages</span>
+        <span>7-day tokens</span>
         {myRank > 0 && (() => {
           const myEntry = sorted.find(p => p.handle === me)
           const streak = myEntry && typeof myEntry.streak === 'number' ? myEntry.streak : null
