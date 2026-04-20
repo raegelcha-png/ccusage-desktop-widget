@@ -8,7 +8,7 @@
     <array>
         <string>/bin/sh</string>
         <string>-c</string>
-        <string>/usr/local/bin/node /Users/raegalcha/.npm-global/lib/node_modules/ccusage/dist/index.js daily -j -O --since $(date -v-90d +%Y%m%d) > /Users/raegalcha/.ccusage-widget/data.json.tmp 2>/dev/null && mv /Users/raegalcha/.ccusage-widget/data.json.tmp /Users/raegalcha/.ccusage-widget/data.json</string>
+        <string>/usr/local/bin/node /Users/raegalcha/.ccusage-widget/refresh.js</string>
     </array>
     <key>StartInterval</key>
     <integer>600</integer>
