@@ -17,10 +17,14 @@ const savedPos = loadJSON('ccusage-pos', { x: null, y: 40 })
 const savedSize = loadJSON('ccusage-size', { w: 280 })
 const savedView = loadJSON('ccusage-view', 'daily')
 const savedWeekdaysOnly = loadJSON('ccusage-weekdays-only', false)
+const savedProjSort = loadJSON('ccusage-proj-sort', 'cost')
+const savedProjWindow = loadJSON('ccusage-proj-window', '30d')
 
 export const initialState = {
   view: savedView,
   weekdaysOnly: savedWeekdaysOnly,
+  projSort: savedProjSort,
+  projWindow: savedProjWindow,
   hoverIdx: null,
   output: '',
   error: null,
@@ -37,6 +41,14 @@ export const updateState = (event, prev) => {
   if (event.type === 'SET_WEEKDAYS') {
     saveJSON('ccusage-weekdays-only', event.value)
     return { ...prev, weekdaysOnly: event.value }
+  }
+  if (event.type === 'SET_PROJ_SORT') {
+    saveJSON('ccusage-proj-sort', event.value)
+    return { ...prev, projSort: event.value }
+  }
+  if (event.type === 'SET_PROJ_WINDOW') {
+    saveJSON('ccusage-proj-window', event.value)
+    return { ...prev, projWindow: event.value }
   }
   if (event.type === 'SET_HOVER') return { ...prev, hoverIdx: event.idx }
   if (event.type === 'SET_POS') return { ...prev, pos: { x: event.x, y: event.y } }
@@ -360,6 +372,139 @@ const Leaderboard = ({ lb, w }) => {
   )
 }
 
+const fmtMinutes = (n) => {
+  if (!n) return '0m'
+  if (n < 60) return `${n}m`
+  const h = Math.floor(n / 60), m = n % 60
+  if (h < 10) return `${h}h ${m}m`
+  return `${h}h`
+}
+
+const Projects = ({ projects, w, sort, window: win, onSort, onWindow }) => {
+  if (!projects || !projects.length) {
+    return <div style={{ fontSize: 10, opacity: 0.6, textAlign: 'center', padding: '18px 0' }}>no project data yet — refresh pending</div>
+  }
+
+  const costKey = win === '7d' ? 'last7dCost' : win === '30d' ? 'last30dCost' : 'totalCost'
+  const tokensKey = win === '7d' ? 'last7dTokens' : win === '30d' ? 'last30dTokens' : 'totalTokens'
+  const minsKey = win === '7d' ? 'last7dActiveMinutes' : win === '30d' ? 'last30dActiveMinutes' : 'activeMinutes'
+
+  const sortKey = sort === 'tokens' ? tokensKey : sort === 'time' ? minsKey : costKey
+  const rows = projects
+    .filter(p => (p[costKey] || 0) > 0 || (p[minsKey] || 0) > 0)
+    .sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0))
+    .slice(0, 10)
+
+  if (!rows.length) {
+    return <div style={{ fontSize: 10, opacity: 0.6, textAlign: 'center', padding: '18px 0' }}>no activity in selected window</div>
+  }
+
+  const max = Math.max(...rows.map(r => r[sortKey] || 0), 1)
+  const totalCost = rows.reduce((s, r) => s + (r[costKey] || 0), 0)
+  const totalMins = rows.reduce((s, r) => s + (r[minsKey] || 0), 0)
+
+  const miniPillStyle = (active) => ({
+    padding: '1.5px 7px',
+    fontSize: 9,
+    fontWeight: 600,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    borderRadius: 999,
+    cursor: 'pointer',
+    background: active ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.04)',
+    color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
+    border: active ? '0.5px solid rgba(255,255,255,0.25)' : '0.5px solid rgba(255,255,255,0.06)',
+    transition: 'all 0.15s ease'
+  })
+
+  const formatValue = (r) => {
+    if (sort === 'tokens') return fmtTokens(r[tokensKey] || 0)
+    if (sort === 'time') return fmtMinutes(r[minsKey] || 0)
+    return '$' + (r[costKey] || 0).toFixed(2)
+  }
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex',
+        gap: 4,
+        marginBottom: 8,
+        alignItems: 'center',
+        flexWrap: 'wrap'
+      }}>
+        <div style={{ fontSize: 8.5, letterSpacing: 0.8, textTransform: 'uppercase', opacity: 0.45, marginRight: 2 }}>sort</div>
+        <div style={miniPillStyle(sort === 'cost')} onClick={() => onSort('cost')}>$</div>
+        <div style={miniPillStyle(sort === 'tokens')} onClick={() => onSort('tokens')}>Tk</div>
+        <div style={miniPillStyle(sort === 'time')} onClick={() => onSort('time')}>Time</div>
+        <div style={{ flex: 1 }} />
+        <div style={miniPillStyle(win === '7d')} onClick={() => onWindow('7d')}>7d</div>
+        <div style={miniPillStyle(win === '30d')} onClick={() => onWindow('30d')}>30d</div>
+        <div style={miniPillStyle(win === 'all')} onClick={() => onWindow('all')}>All</div>
+      </div>
+
+      <div>
+        {rows.map((r, i) => {
+          const v = r[sortKey] || 0
+          const pct = Math.max((v / max) * 100, 1.5)
+          const isTop = i === 0
+          return (
+            <div key={r.key} style={{
+              display: 'flex',
+              alignItems: 'center',
+              marginBottom: 4,
+              fontSize: 10,
+              opacity: isTop ? 1 : 0.88
+            }}>
+              <div style={{
+                width: 92,
+                opacity: 0.8,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontWeight: isTop ? 600 : 400
+              }} title={r.cwd || r.name}>
+                {r.name}
+              </div>
+              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 3, height: 10, marginRight: 7, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${pct}%`,
+                  height: '100%',
+                  background: isTop ? barCurrent : barNormal,
+                  borderRadius: 3,
+                  boxShadow: isTop ? '0 0 6px rgba(255,255,255,0.22)' : 'none',
+                  transition: 'width 0.4s ease'
+                }} />
+              </div>
+              <div style={{
+                width: 54,
+                textAlign: 'right',
+                opacity: 0.85,
+                fontVariantNumeric: 'tabular-nums',
+                fontWeight: isTop ? 600 : 400
+              }}>
+                {formatValue(r)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{
+        marginTop: 8,
+        fontSize: 8.5,
+        opacity: 0.45,
+        display: 'flex',
+        justifyContent: 'space-between',
+        letterSpacing: 0.3,
+        fontVariantNumeric: 'tabular-nums'
+      }}>
+        <span>top {rows.length} of {projects.length}</span>
+        <span>${totalCost.toFixed(2)} · {fmtMinutes(totalMins)}</span>
+      </div>
+    </div>
+  )
+}
+
 const GripDots = () => (
   <svg width="12" height="12" viewBox="0 0 12 12" style={{ display: 'block' }}>
     {[[3,9],[6,9],[9,9],[6,6],[9,6],[9,3]].map(([cx,cy], i) => (
@@ -368,7 +513,7 @@ const GripDots = () => (
   </svg>
 )
 
-export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx }, dispatch) => {
+export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx, projSort, projWindow }, dispatch) => {
   const currentView = view || 'daily'
   const wdOnly = !!weekdaysOnly
   const width = (size && size.w) || 280
@@ -532,6 +677,7 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx 
       <div style={{ display: 'flex', gap: 5, marginBottom: 10, alignItems: 'center' }}>
         <div style={pillStyle(currentView === 'daily')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'daily' })}>Daily</div>
         <div style={pillStyle(currentView === 'weekly')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'weekly' })}>Weekly</div>
+        <div style={pillStyle(currentView === 'projects')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'projects' })}>Projects</div>
         <div style={pillStyle(currentView === 'hotspot')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'hotspot' })}>Hotspot</div>
         <div style={pillStyle(currentView === 'leaderboard')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'leaderboard' })}>Friends</div>
         {currentView === 'daily' && (
@@ -549,6 +695,15 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx 
         <Leaderboard lb={data.leaderboard} w={chartW} />
       ) : currentView === 'hotspot' ? (
         <Heatmap hotspot={data.hotspot} w={chartW} />
+      ) : currentView === 'projects' ? (
+        <Projects
+          projects={data.projects}
+          w={chartW}
+          sort={projSort || 'cost'}
+          window={projWindow || '30d'}
+          onSort={(v) => dispatch({ type: 'SET_PROJ_SORT', value: v })}
+          onWindow={(v) => dispatch({ type: 'SET_PROJ_WINDOW', value: v })}
+        />
       ) : currentView === 'daily' ? (
         <div>
           {buckets.map((d, i) => {

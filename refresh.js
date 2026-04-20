@@ -48,6 +48,55 @@ const dailyMsgs = new Map()
 let total = 0
 const seen = new Set()
 
+// pricing per-model (USD per 1M tokens) — approximate, matches Anthropic public rates
+const PRICING = {
+  'claude-opus-4-7':   { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.50 },
+  'claude-opus-4-6':   { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.50 },
+  'claude-opus-4-5':   { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.50 },
+  'claude-opus-4':     { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.50 },
+  'claude-sonnet-4-6': { input:  3, output: 15, cacheWrite:  3.75, cacheRead: 0.30 },
+  'claude-sonnet-4-5': { input:  3, output: 15, cacheWrite:  3.75, cacheRead: 0.30 },
+  'claude-sonnet-4':   { input:  3, output: 15, cacheWrite:  3.75, cacheRead: 0.30 },
+  'claude-haiku-4-5':  { input:  1, output:  5, cacheWrite:  1.25, cacheRead: 0.10 },
+  'claude-haiku-4':    { input:  1, output:  5, cacheWrite:  1.25, cacheRead: 0.10 }
+}
+const priceFor = (model) => {
+  if (!model) return PRICING['claude-sonnet-4-6']
+  if (PRICING[model]) return PRICING[model]
+  const key = Object.keys(PRICING).find(k => model.includes(k.replace('claude-', '').replace(/-\d+$/, '')))
+  if (key) return PRICING[key]
+  if (model.includes('opus')) return PRICING['claude-opus-4-6']
+  if (model.includes('haiku')) return PRICING['claude-haiku-4-5']
+  return PRICING['claude-sonnet-4-6']
+}
+
+// projects: keyed by cwd (full path); stores tokens/cost/time buckets
+const projects = new Map()
+const projKey = (cwd) => cwd || 'unknown'
+const projName = (cwd) => {
+  if (!cwd) return 'unknown'
+  const parts = cwd.split('/').filter(Boolean)
+  return parts[parts.length - 1] || cwd
+}
+const ensureProj = (cwd) => {
+  const k = projKey(cwd)
+  let p = projects.get(k)
+  if (!p) {
+    p = {
+      key: k,
+      name: projName(cwd),
+      cwd: cwd || null,
+      inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0,
+      totalTokens: 0, totalCost: 0,
+      daily: new Map(),          // date -> { tokens, cost }
+      activeMinutes: new Set(),  // YYYY-MM-DDTHH:MM — all-time
+      lastTs: null, firstTs: null
+    }
+    projects.set(k, p)
+  }
+  return p
+}
+
 const files = walk(PROJECTS_DIR)
 for (const f of files) {
   let content
@@ -56,18 +105,62 @@ for (const f of files) {
     if (!line.trim()) continue
     let obj
     try { obj = JSON.parse(line) } catch { continue }
-    if (obj.type !== 'user') continue
     const ts = obj.timestamp
     if (!ts) continue
-    const uuid = obj.uuid
-    if (uuid && seen.has(uuid)) continue
-    if (uuid) seen.add(uuid)
     const d = new Date(ts)
     if (isNaN(d.getTime())) continue
-    matrix[d.getDay()][d.getHours()] += 1
-    const key = d.toISOString().slice(0, 10)
-    dailyMsgs.set(key, (dailyMsgs.get(key) || 0) + 1)
-    total += 1
+
+    // user-message hotspot + dailyMsgs (unchanged behavior)
+    if (obj.type === 'user') {
+      const uuid = obj.uuid
+      if (!uuid || !seen.has(uuid)) {
+        if (uuid) seen.add(uuid)
+        matrix[d.getDay()][d.getHours()] += 1
+        const dateKey = d.toISOString().slice(0, 10)
+        dailyMsgs.set(dateKey, (dailyMsgs.get(dateKey) || 0) + 1)
+        total += 1
+      }
+    }
+
+    // per-project aggregation — attribute on assistant messages (where tokens live)
+    // but also count active-minutes on any message (user or assistant)
+    const cwd = obj.cwd || (f.includes('/projects/') ? null : null)
+    const p = ensureProj(cwd)
+    const minuteKey = d.toISOString().slice(0, 16) // YYYY-MM-DDTHH:MM
+    p.activeMinutes.add(minuteKey)
+    if (!p.firstTs || ts < p.firstTs) p.firstTs = ts
+    if (!p.lastTs || ts > p.lastTs) p.lastTs = ts
+
+    if (obj.type === 'assistant' && obj.message && obj.message.usage) {
+      const u = obj.message.usage
+      const model = obj.message.model || ''
+      const inT = u.input_tokens || 0
+      const outT = u.output_tokens || 0
+      const ccT = u.cache_creation_input_tokens || 0
+      const crT = u.cache_read_input_tokens || 0
+      const price = priceFor(model)
+      const cost = (inT * price.input + outT * price.output +
+                    ccT * price.cacheWrite + crT * price.cacheRead) / 1e6
+      const tokens = inT + outT + ccT + crT
+      p.inputTokens += inT
+      p.outputTokens += outT
+      p.cacheCreationTokens += ccT
+      p.cacheReadTokens += crT
+      p.totalTokens += tokens
+      p.totalCost += cost
+
+      const dateKey = d.toISOString().slice(0, 10)
+      const dayBucket = p.daily.get(dateKey) || { tokens: 0, cost: 0, mins: new Set() }
+      dayBucket.tokens += tokens
+      dayBucket.cost += cost
+      p.daily.set(dateKey, dayBucket)
+    }
+
+    // track active-minutes per-day so we can window them
+    const dateKey2 = d.toISOString().slice(0, 10)
+    const db = p.daily.get(dateKey2) || { tokens: 0, cost: 0, mins: new Set() }
+    db.mins.add(minuteKey)
+    p.daily.set(dateKey2, db)
   }
 }
 
@@ -193,6 +286,50 @@ function syncLeaderboard() {
 
 const lb = syncLeaderboard()
 if (lb) daily.leaderboard = lb
+
+// build per-window project stats (rolling N full days back from today)
+const DAY = 86400000
+const cutoffKey = (days) => new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
+const windowAggregate = (p, days) => {
+  const cutoff = cutoffKey(days)
+  let tokens = 0, cost = 0
+  const mins = new Set()
+  for (const [dateKey, bucket] of p.daily) {
+    if (dateKey < cutoff) continue
+    tokens += bucket.tokens
+    cost += bucket.cost
+    for (const m of bucket.mins) mins.add(m)
+  }
+  return { tokens, cost, activeMinutes: mins.size }
+}
+
+const projectsArr = Array.from(projects.values()).map(p => {
+  const last7  = windowAggregate(p, 7)
+  const last30 = windowAggregate(p, 30)
+  return {
+    key: p.key,
+    name: p.name,
+    cwd: p.cwd,
+    totalTokens: p.totalTokens,
+    totalCost: Math.round(p.totalCost * 10000) / 10000,
+    inputTokens: p.inputTokens,
+    outputTokens: p.outputTokens,
+    cacheCreationTokens: p.cacheCreationTokens,
+    cacheReadTokens: p.cacheReadTokens,
+    activeMinutes: p.activeMinutes.size,
+    last7dTokens: last7.tokens,
+    last7dCost: Math.round(last7.cost * 10000) / 10000,
+    last7dActiveMinutes: last7.activeMinutes,
+    last30dTokens: last30.tokens,
+    last30dCost: Math.round(last30.cost * 10000) / 10000,
+    last30dActiveMinutes: last30.activeMinutes,
+    firstTs: p.firstTs,
+    lastTs: p.lastTs
+  }
+}).filter(p => p.totalTokens > 0 || p.activeMinutes > 0)
+
+projectsArr.sort((a, b) => (b.last30dCost || 0) - (a.last30dCost || 0))
+daily.projects = projectsArr
 
 fs.mkdirSync(CACHE_DIR, { recursive: true })
 fs.writeFileSync(TMP, JSON.stringify(daily))
