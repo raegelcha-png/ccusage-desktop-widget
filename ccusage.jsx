@@ -14,7 +14,8 @@ const saveJSON = (key, val) => {
 }
 
 const savedPos = loadJSON('ccusage-pos', { x: null, y: 40 })
-const savedSize = loadJSON('ccusage-size', { w: 280 })
+let savedSize = loadJSON('ccusage-size', { w: 530 })
+if (!savedSize || typeof savedSize.w !== 'number' || savedSize.w < 400) savedSize = { w: 530 }
 const savedView = loadJSON('ccusage-view', 'daily')
 const savedWeekdaysOnly = loadJSON('ccusage-weekdays-only', false)
 const savedProjSort = loadJSON('ccusage-proj-sort', 'cost')
@@ -79,8 +80,8 @@ const sparkStroke = 'rgba(255,255,255,0.85)'
 const sparkAreaTop = 'rgba(255,255,255,0.28)'
 const histBar = 'rgba(255,255,255,0.45)'
 const histBarLast = 'rgba(255,255,255,0.92)'
-const hoverAccent = '#0a84ff'
-const hoverText = '#64d2ff'
+const hoverAccent = '#ff9f0a'
+const hoverText = '#ff9f0a'
 const heatAccent = '#64d2ff'
 
 const groupByWeek = (days) => {
@@ -105,7 +106,7 @@ const groupByWeek = (days) => {
   return Array.from(weeks.values()).sort((a, b) => a.date.localeCompare(b.date))
 }
 
-const Sparkline = ({ data, w, h, paddingX = 2, hoverIdx = null }) => {
+const Sparkline = ({ data, w, h, paddingX = 2, hoverIdx = null, onHover }) => {
   if (!data || data.length < 2) return null
   const max = Math.max(...data.map(d => d.totalCost || 0), 0.01)
   const xs = data.map((_, i) => (i / (data.length - 1)) * (w - paddingX * 2) + paddingX)
@@ -114,6 +115,12 @@ const Sparkline = ({ data, w, h, paddingX = 2, hoverIdx = null }) => {
   const areaPts = `${xs[0].toFixed(1)},${h} ${linePts} ${xs[xs.length-1].toFixed(1)},${h}`
   const lastX = xs[xs.length-1], lastY = ys[ys.length-1]
   const showHover = hoverIdx != null && hoverIdx >= 0 && hoverIdx < data.length
+  // voronoi-style hit strips so hovering anywhere over a point's column triggers hover
+  const hitRanges = xs.map((x, i) => {
+    const left  = i === 0 ? 0 : (xs[i-1] + x) / 2
+    const right = i === xs.length - 1 ? w : (x + xs[i+1]) / 2
+    return { x: left, w: Math.max(1, right - left) }
+  })
   return (
     <svg width={w} height={h} style={{ display: 'block' }}>
       <defs>
@@ -127,10 +134,23 @@ const Sparkline = ({ data, w, h, paddingX = 2, hoverIdx = null }) => {
       <circle cx={lastX} cy={lastY} r="2.6" fill="#fff" />
       {showHover && (
         <g>
-          <line x1={xs[hoverIdx]} y1={0} x2={xs[hoverIdx]} y2={h} stroke="rgba(10,132,255,0.4)" strokeWidth="1" strokeDasharray="2 2" />
-          <circle cx={xs[hoverIdx]} cy={ys[hoverIdx]} r="3.2" fill={hoverAccent} stroke="#fff" strokeWidth="1.2" />
+          <line x1={xs[hoverIdx]} y1={0} x2={xs[hoverIdx]} y2={h} stroke="rgba(255,159,10,0.45)" strokeWidth="1" strokeDasharray="2 2" />
+          <circle cx={xs[hoverIdx]} cy={ys[hoverIdx]} r="3.4" fill={hoverAccent} stroke="#fff" strokeWidth="1.2" />
         </g>
       )}
+      {onHover && hitRanges.map((r, i) => (
+        <rect
+          key={i}
+          x={r.x}
+          y={0}
+          width={r.w}
+          height={h}
+          fill="transparent"
+          style={{ cursor: 'pointer' }}
+          onMouseEnter={() => onHover(i)}
+          onMouseLeave={() => onHover(null)}
+        />
+      ))}
     </svg>
   )
 }
@@ -160,7 +180,7 @@ const Histogram = ({ data, w, h, hoverIdx = null, onHover }) => {
             style={{
               cursor: 'pointer',
               transition: 'fill 0.12s ease',
-              filter: isHover ? 'drop-shadow(0 0 3px rgba(10,132,255,0.55))' : 'none'
+              filter: isHover ? 'drop-shadow(0 0 3px rgba(255,159,10,0.6))' : 'none'
             }}
             onMouseEnter={() => onHover && onHover(i)}
             onMouseLeave={() => onHover && onHover(null)}
@@ -785,7 +805,14 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
                 </div>
               )}
             </div>
-            <Sparkline data={buckets} w={chartW} h={46} paddingX={barW / 2} hoverIdx={hIdx} />
+            <Sparkline
+              data={buckets}
+              w={chartW}
+              h={46}
+              paddingX={barW / 2}
+              hoverIdx={hIdx}
+              onHover={(i) => dispatch({ type: 'SET_HOVER', idx: i })}
+            />
             <Histogram
               data={buckets}
               w={chartW}
