@@ -287,6 +287,13 @@ const Leaderboard = ({ lb, w }) => {
     )
   }
   const me = lb.myHandle
+  const now = Date.now()
+  const staleHours = (p) => {
+    if (!p.updatedAt) return null
+    const t = Date.parse(p.updatedAt)
+    if (isNaN(t)) return null
+    return (now - t) / 3600000
+  }
   const sorted = [...lb.participants].sort((a, b) => (b.last7dTokens || 0) - (a.last7dTokens || 0))
   const max = Math.max(...sorted.map(p => p.last7dTokens || 0), 1)
   const myRank = sorted.findIndex(p => p.handle === me) + 1
@@ -296,13 +303,16 @@ const Leaderboard = ({ lb, w }) => {
         const isMe = p.handle === me
         const pct = ((p.last7dTokens || 0) / max) * 100
         const rank = i + 1
+        const hrs = staleHours(p)
+        const isStale = hrs != null && hrs > 1
+        const baseOpacity = isMe ? 1 : 0.85
         return (
-          <div key={p.handle} style={{
+          <div key={p.handle} title={hrs != null ? `updated ${hrs < 1 ? '<1h' : Math.round(hrs) + 'h'} ago` : ''} style={{
             display: 'flex',
             alignItems: 'center',
             marginBottom: 4,
             fontSize: 10,
-            opacity: isMe ? 1 : 0.85
+            opacity: isStale ? baseOpacity * 0.5 : baseOpacity
           }}>
             <div style={{
               width: 14,
@@ -393,7 +403,7 @@ const Projects = ({ projects, w, sort, window: win, onSort, onWindow }) => {
   const rows = projects
     .filter(p => (p[costKey] || 0) > 0 || (p[minsKey] || 0) > 0)
     .sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0))
-    .slice(0, 10)
+    .slice(0, 5)
 
   if (!rows.length) {
     return <div style={{ fontSize: 10, opacity: 0.6, textAlign: 'center', padding: '18px 0' }}>no activity in selected window</div>
@@ -628,10 +638,10 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
   }
 
   const pillStyle = (active) => ({
-    padding: '2px 9px',
-    fontSize: 9.5,
+    padding: '2px 7px',
+    fontSize: 9,
     fontWeight: 600,
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
     borderRadius: 999,
     cursor: 'pointer',
@@ -674,7 +684,7 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 5, marginBottom: 10, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap', rowGap: 4 }}>
         <div style={pillStyle(currentView === 'daily')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'daily' })}>Daily</div>
         <div style={pillStyle(currentView === 'weekly')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'weekly' })}>Weekly</div>
         <div style={pillStyle(currentView === 'projects')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'projects' })}>Projects</div>
@@ -682,7 +692,7 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
         <div style={pillStyle(currentView === 'leaderboard')} onClick={() => dispatch({ type: 'SET_VIEW', view: 'leaderboard' })}>Friends</div>
         {currentView === 'daily' && (
           <div
-            style={{ ...pillStyle(wdOnly), marginLeft: 'auto' }}
+            style={pillStyle(wdOnly)}
             onClick={() => dispatch({ type: 'SET_WEEKDAYS', value: !wdOnly })}
             title={wdOnly ? 'showing weekdays only' : 'showing all days'}
           >

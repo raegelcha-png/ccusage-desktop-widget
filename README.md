@@ -19,39 +19,45 @@ Minimal macOS desktop widget that shows your Claude Code token spend as a bar ch
 
 ## Install
 
-Assumes Homebrew, Node, and `npm` are already set up.
+Prereqs: Homebrew, Node, `gh` (authenticated via `gh auth login`), Übersicht.
 
 ```sh
-# 1. ccusage (the token-usage reader)
-npm install -g ccusage
-
-# 2. Übersicht (the widget host)
 brew install --cask ubersicht
-open -a "/Applications/Übersicht.app"
+brew install gh
+gh auth login
 ```
+
+Then clone this repo and run the installer:
+
+```sh
+git clone <this-repo>
+cd ccusage-desktop-widget
+./install.sh --repo=owner/ccusage-leaderboard
+```
+
+That's it. The installer:
+
+- Auto-detects your GitHub handle, node binary path, and `$HOME`
+- Installs `ccusage` globally if missing
+- Writes `~/.ccusage-widget/{refresh.js, leaderboard.config.json}`
+- Copies the widget to Übersicht's widget directory
+- Writes and loads a launchd agent that refreshes every 10 min
+- Runs an initial refresh so data is ready when Übersicht opens
 
 Grant **Screen Recording** permission to Übersicht when prompted (required on macOS 12+ for widgets to render on the desktop). Toggle it on in `System Settings → Privacy & Security → Screen Recording`, then quit and relaunch Übersicht.
 
-Then:
+### Re-installing / updating
+
+Re-running `./install.sh` is safe — it overwrites the widget, refresh.js, and plist, then reloads the launchd agent. No manual cleanup needed.
+
+### Uninstall
 
 ```sh
-# 3. Widget file
-cp ccusage.jsx "$HOME/Library/Application Support/Übersicht/widgets/"
-
-# 4. Cache directory + refresh script
-mkdir -p "$HOME/.ccusage-widget"
-cp refresh.js "$HOME/.ccusage-widget/"
-chmod +x "$HOME/.ccusage-widget/refresh.js"
-
-# 5. First refresh (seeds data.json)
-/usr/local/bin/node "$HOME/.ccusage-widget/refresh.js"
-
-# 6. launchd agent — refreshes the cache every 10 min
-cp com.raegalcha.ccusage-cache.plist "$HOME/Library/LaunchAgents/"
-launchctl load "$HOME/Library/LaunchAgents/com.raegalcha.ccusage-cache.plist"
+launchctl unload ~/Library/LaunchAgents/com.ccusage-widget.refresh.plist
+rm ~/Library/LaunchAgents/com.ccusage-widget.refresh.plist
+rm -rf ~/.ccusage-widget
+rm "$HOME/Library/Application Support/Übersicht/widgets/ccusage.jsx"
 ```
-
-The plist has paths hardcoded to `/Users/raegalcha` — update those to match your `$HOME` before loading. Same for the node binary path if yours isn't `/usr/local/bin/node` (check with `which node`).
 
 ## Why the cache file?
 

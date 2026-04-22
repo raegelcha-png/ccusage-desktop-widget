@@ -7,8 +7,21 @@ const HOME = process.env.HOME
 const CACHE_DIR = path.join(HOME, '.ccusage-widget')
 const OUT = path.join(CACHE_DIR, 'data.json')
 const TMP = OUT + '.tmp'
-const NODE_BIN = '/usr/local/bin/node'
-const CCUSAGE = path.join(HOME, '.npm-global/lib/node_modules/ccusage/dist/index.js')
+const NODE_BIN = process.env.CCUSAGE_NODE || process.execPath
+const CCUSAGE = process.env.CCUSAGE_PATH || (() => {
+  const candidates = [
+    path.join(HOME, '.npm-global/lib/node_modules/ccusage/dist/index.js'),
+    '/usr/local/lib/node_modules/ccusage/dist/index.js',
+    '/opt/homebrew/lib/node_modules/ccusage/dist/index.js'
+  ]
+  for (const c of candidates) if (fs.existsSync(c)) return c
+  try {
+    const root = execSync('npm root -g', { encoding: 'utf8' }).trim()
+    const p = path.join(root, 'ccusage', 'dist', 'index.js')
+    if (fs.existsSync(p)) return p
+  } catch {}
+  throw new Error('ccusage not found — install with: npm install -g ccusage')
+})()
 const PROJECTS_DIR = path.join(HOME, '.claude', 'projects')
 const LB_CONFIG = path.join(CACHE_DIR, 'leaderboard.config.json')
 const LB_REPO_DIR = path.join(CACHE_DIR, 'leaderboard-repo')
@@ -266,7 +279,29 @@ function syncLeaderboard() {
     if (status.trim()) {
       execSync(`git add "stats/${handle}.json"`, { cwd: LB_REPO_DIR, ...opts })
       execSync(`git commit -m "update ${handle} stats"`, { cwd: LB_REPO_DIR, env: gitEnv, ...opts })
-      execSync('git push', { cwd: LB_REPO_DIR, ...opts })
+      // retry push — collisions happen when multiple participants push at once.
+      // each user only touches their own stats/{handle}.json, so rebase is conflict-free.
+      let pushed = false
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          execSync('git push', { cwd: LB_REPO_DIR, ...opts })
+          pushed = true
+          break
+        } catch (e) {
+          const msg = (e.message || '') + (e.stderr ? e.stderr.toString() : '')
+          if (!/non-fast-forward|cannot lock ref|rejected|fetch first|stale info/i.test(msg)) throw e
+          const waitMs = 400 + Math.floor(Math.random() * 800)
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs)
+          try {
+            execSync('git fetch origin', { cwd: LB_REPO_DIR, ...opts })
+            execSync('git rebase origin/HEAD', { cwd: LB_REPO_DIR, env: gitEnv, ...opts })
+          } catch (rebaseErr) {
+            execSync('git rebase --abort', { cwd: LB_REPO_DIR, stdio: 'ignore' })
+            throw rebaseErr
+          }
+        }
+      }
+      if (!pushed) throw new Error('git push failed after retries')
     }
 
     const entries = fs.readdirSync(statsDir).filter(f => f.endsWith('.json'))
