@@ -15,7 +15,7 @@ Minimal macOS desktop widget that shows your Claude Code token spend as a bar ch
 - Avg, EOM projection, cache-hit % in the footer
 - Bars turn orange when a day crosses $100 (or a week crosses $300)
 - Drag the header to move, drag the bottom-right corner to resize — position and size persist
-- Data refreshes every 10 minutes in the background via launchd
+- Data refreshes every hour in the background via launchd
 
 ## Install
 
@@ -41,7 +41,7 @@ That's it. The installer:
 - Installs `ccusage` globally if missing
 - Writes `~/.ccusage-widget/{refresh.js, leaderboard.config.json}`
 - Copies the widget to Übersicht's widget directory
-- Writes and loads a launchd agent that refreshes every 10 min
+- Writes and loads a launchd agent that refreshes every hour
 - Runs an initial refresh so data is ready when Übersicht opens
 
 Grant **Screen Recording** permission to Übersicht when prompted (required on macOS 12+ for widgets to render on the desktop). Toggle it on in `System Settings → Privacy & Security → Screen Recording`, then quit and relaunch Übersicht.
@@ -63,7 +63,7 @@ rm "$HOME/Library/Application Support/Übersicht/widgets/ccusage.jsx"
 
 ccusage scans `~/.claude/projects/**/*.jsonl` and takes ~15-20s to run on a large history. Übersicht would re-run the command on every refresh, which is wasteful and blocks the widget.
 
-The launchd agent runs ccusage in the background every 10 min and writes to `~/.ccusage-widget/data.json`. The widget just `cat`s that file — instant render, no shell-env or PATH issues inside Übersicht.
+The launchd agent runs ccusage in the background every hour and writes to `~/.ccusage-widget/data.json`. The widget just `cat`s that file — instant render, no shell-env or PATH issues inside Übersicht.
 
 ## Widget gotchas
 
@@ -76,7 +76,7 @@ Both are handled in `ccusage.jsx`.
 
 ## Tweak
 
-- `refreshFrequency` (ms) in the widget controls how often it re-reads the cache file. 10 min is plenty.
+- `refreshFrequency` (ms) in the widget controls how often it re-reads the cache file. 10 min is plenty (cache itself updates hourly via launchd).
 - `hotThreshold` in the render function controls when bars turn red ($100/day, $300/week by default).
 - Position via `top`/`right` in the `className` template literal at the top of the widget.
 

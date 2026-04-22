@@ -97,7 +97,7 @@ cat > "$PLIST_PATH" <<PLIST
         <key>CCUSAGE_NODE</key><string>${NODE_BIN}</string>
     </dict>
     <key>StartInterval</key>
-    <integer>600</integer>
+    <integer>3600</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardErrorPath</key>
@@ -133,7 +133,7 @@ printf "\n"
 printf "  handle:        %s\n" "$HANDLE"
 printf "  repo:          %s\n" "$REPO"
 printf "  cache:         %s\n" "$CACHE_DIR/data.json"
-printf "  refresh every: 10 min (launchd)\n"
+printf "  refresh every: 1 hour (launchd)\n"
 printf "  widget:        %s/ccusage.jsx\n" "$WIDGETS_DIR"
 printf "\n"
 printf "open Übersicht (or restart it) to see the widget.\n"
