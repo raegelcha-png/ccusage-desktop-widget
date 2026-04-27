@@ -20,12 +20,14 @@ const savedView = loadJSON('ccusage-view', 'daily')
 const savedWeekdaysOnly = loadJSON('ccusage-weekdays-only', false)
 const savedProjSort = loadJSON('ccusage-proj-sort', 'cost')
 const savedProjWindow = loadJSON('ccusage-proj-window', '30d')
+const savedHotspotSub = loadJSON('ccusage-hotspot-sub', 'today')
 
 export const initialState = {
   view: savedView,
   weekdaysOnly: savedWeekdaysOnly,
   projSort: savedProjSort,
   projWindow: savedProjWindow,
+  hotspotSub: savedHotspotSub,
   hoverIdx: null,
   output: '',
   error: null,
@@ -51,9 +53,13 @@ export const updateState = (event, prev) => {
     saveJSON('ccusage-proj-window', event.value)
     return { ...prev, projWindow: event.value }
   }
+  if (event.type === 'SET_HOTSPOT_SUB') {
+    saveJSON('ccusage-hotspot-sub', event.value)
+    return { ...prev, hotspotSub: event.value }
+  }
   if (event.type === 'SET_HOVER') return { ...prev, hoverIdx: event.idx }
   if (event.type === 'SET_POS') return { ...prev, pos: { x: event.x, y: event.y } }
-  if (event.type === 'SET_SIZE') return { ...prev, size: { w: event.w } }
+  if (event.type === 'SET_SIZE') return { ...prev, size: { w: event.w, h: event.h } }
   if (event.type === 'UB/COMMAND_RAN') return { ...prev, output: event.output, error: event.error }
   return prev
 }
@@ -278,6 +284,66 @@ const Heatmap = ({ hotspot, w }) => {
         </div>
         <div style={{ fontSize: 9, opacity: 0.55, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
           {peak} msgs in peak hour · {total.toLocaleString()} total
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const TodayHeatmap = ({ todayHotspot, w }) => {
+  if (!todayHotspot || !todayHotspot.hourly) {
+    return <div style={{ fontSize: 10, opacity: 0.6, textAlign: 'center', padding: '18px 0' }}>no today data yet — refresh pending</div>
+  }
+  const { hourly, peak, total } = todayHotspot
+  const nowHour = new Date().getHours()
+  const gap = 2
+  const barW = Math.max(2, (w - gap * 23) / 24)
+  const maxH = 48
+  const peakHour = hourly.indexOf(Math.max(...hourly))
+  return (
+    <div>
+      <svg width={w} height={maxH + 4} style={{ display: 'block', overflow: 'visible' }}>
+        {hourly.map((v, h) => {
+          const bh = peak > 0 ? Math.max(v > 0 ? 3 : 1.5, (v / peak) * maxH) : 1.5
+          const x = h * (barW + gap)
+          const isCurrent = h === nowHour
+          const fill = isCurrent ? heatAccent : (v > 0 ? barNormal : 'rgba(255,255,255,0.06)')
+          return (
+            <rect
+              key={h}
+              x={x}
+              y={maxH + 4 - bh}
+              width={barW}
+              height={bh}
+              rx="1"
+              fill={fill}
+            />
+          )
+        })}
+      </svg>
+      <div style={{ position: 'relative', height: 10, marginTop: 3, fontSize: 8, opacity: 0.45, fontVariantNumeric: 'tabular-nums', letterSpacing: 0.2 }}>
+        {[0, 6, 12, 18].map(h => (
+          <span key={h} style={{ position: 'absolute', left: h * (barW + gap) + barW / 2, transform: 'translateX(-50%)' }}>
+            {hourLabel(h)}
+          </span>
+        ))}
+        <span style={{ position: 'absolute', right: 0 }}>12a</span>
+      </div>
+      <div style={{ marginTop: 10, fontSize: 10, lineHeight: 1.5, opacity: 0.88 }}>
+        {total > 0 ? (
+          <div>
+            Peak at{' '}
+            <span style={{ color: heatAccent, fontWeight: 600 }}>{hourLabelFull(peakHour)}</span>
+            {' · '}
+            <span style={{ color: heatAccent, fontWeight: 600 }}>{total}</span>
+            {' prompts today'}
+          </div>
+        ) : (
+          <div style={{ opacity: 0.5 }}>no prompts yet today</div>
+        )}
+        <div style={{ fontSize: 9, opacity: 0.5, marginTop: 2 }}>
+          now: {hourLabelFull(nowHour)}
+          {hourly[nowHour] > 0 ? ` · ${hourly[nowHour]} this hour` : ''}
         </div>
       </div>
     </div>
@@ -543,10 +609,12 @@ const GripDots = () => (
   </svg>
 )
 
-export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx, projSort, projWindow }, dispatch) => {
+export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx, projSort, projWindow, hotspotSub }, dispatch) => {
   const currentView = view || 'daily'
   const wdOnly = !!weekdaysOnly
   const width = (size && size.w) || 280
+  const height = (size && typeof size.h === 'number') ? size.h : null
+  const compact = height !== null
   const yPos = (pos && pos.y != null) ? pos.y : 40
   const xPos = (pos && pos.x != null)
     ? pos.x
@@ -557,6 +625,7 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
     left: xPos,
     top: yPos,
     width: width,
+    ...(height && { height, overflow: 'hidden' }),
     padding: '14px 16px 12px',
     background: 'rgba(22, 22, 28, 0.70)',
     borderRadius: 12,
@@ -642,19 +711,31 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
     e.stopPropagation()
     e.preventDefault()
     const startMX = e.clientX
+    const startMY = e.clientY
     const origW = width
+    const rootEl = e.currentTarget.parentElement
+    const origH = rootEl ? Math.round(rootEl.getBoundingClientRect().height) : (height || 400)
     let latestW = origW
+    let latestH = height || origH
     const onMove = (ev) => {
       latestW = Math.max(240, Math.min(520, origW + ev.clientX - startMX))
-      dispatch({ type: 'SET_SIZE', w: latestW })
+      latestH = Math.max(80, origH + ev.clientY - startMY)
+      dispatch({ type: 'SET_SIZE', w: latestW, h: latestH })
     }
     const onUp = () => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
-      saveJSON('ccusage-size', { w: latestW })
+      saveJSON('ccusage-size', { w: latestW, h: latestH })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+  }
+
+  const resetHeight = (e) => {
+    e.stopPropagation()
+    const newSize = { w: width }
+    dispatch({ type: 'SET_SIZE', w: width, h: undefined })
+    saveJSON('ccusage-size', newSize)
   }
 
   const pillStyle = (active) => ({
@@ -688,19 +769,19 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
-          paddingBottom: 10,
-          marginBottom: 10,
+          paddingBottom: compact ? 6 : 10,
+          marginBottom: compact ? 6 : 10,
           borderBottom: '0.5px solid rgba(255,255,255,0.08)',
           cursor: 'grab'
         }}
       >
         <div>
           <div style={{ fontSize: 9, letterSpacing: 1, opacity: 0.5, textTransform: 'uppercase' }}>{totalLabel}</div>
-          <div style={{ fontSize: 22, fontWeight: 600, marginTop: 2, letterSpacing: -0.5, fontVariantNumeric: 'tabular-nums' }}>${periodTotal.toFixed(2)}</div>
+          <div style={{ fontSize: compact ? 15 : 22, fontWeight: 600, marginTop: 1, letterSpacing: -0.5, fontVariantNumeric: 'tabular-nums' }}>${periodTotal.toFixed(2)}</div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 9, letterSpacing: 1, opacity: 0.5, textTransform: 'uppercase' }}>{currentLabel}</div>
-          <div style={{ fontSize: 22, fontWeight: 600, marginTop: 2, letterSpacing: -0.5, fontVariantNumeric: 'tabular-nums' }}>${currentCost.toFixed(2)}</div>
+          <div style={{ fontSize: compact ? 15 : 22, fontWeight: 600, marginTop: 1, letterSpacing: -0.5, fontVariantNumeric: 'tabular-nums' }}>${currentCost.toFixed(2)}</div>
         </div>
       </div>
 
@@ -724,7 +805,16 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
       {currentView === 'leaderboard' ? (
         <Leaderboard lb={data.leaderboard} w={chartW} />
       ) : currentView === 'hotspot' ? (
-        <Heatmap hotspot={data.hotspot} w={chartW} />
+        <div>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+            <div style={pillStyle((hotspotSub || 'today') === 'today')} onClick={() => dispatch({ type: 'SET_HOTSPOT_SUB', value: 'today' })}>Today</div>
+            <div style={pillStyle((hotspotSub || 'today') === 'lifetime')} onClick={() => dispatch({ type: 'SET_HOTSPOT_SUB', value: 'lifetime' })}>Lifetime</div>
+          </div>
+          {(hotspotSub || 'today') === 'today'
+            ? <TodayHeatmap todayHotspot={data.todayHotspot} w={chartW} />
+            : <Heatmap hotspot={data.hotspot} w={chartW} />
+          }
+        </div>
       ) : currentView === 'projects' ? (
         <Projects
           projects={data.projects}
@@ -745,12 +835,12 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
               <div key={d.date} style={{
                 display: 'flex',
                 alignItems: 'center',
-                marginBottom: 4,
+                marginBottom: compact ? 3 : 5,
                 fontSize: 10,
                 opacity: isCurrent ? 1 : 0.88
               }}>
-                <div style={{ width: 44, opacity: 0.5, fontVariantNumeric: 'tabular-nums' }}>{fmtDate(d.date)}</div>
-                <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 3, height: 10, marginRight: 7, overflow: 'hidden' }}>
+                <div style={{ width: 44, opacity: 0.5, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtDate(d.date)}</div>
+                <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 3, height: 10, marginRight: 7, overflow: 'hidden', alignSelf: 'center' }}>
                   <div style={{
                     width: `${w}%`,
                     height: '100%',
@@ -761,13 +851,19 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
                   }} />
                 </div>
                 <div style={{
-                  width: 46,
                   textAlign: 'right',
                   opacity: 0.85,
                   fontVariantNumeric: 'tabular-nums',
-                  fontWeight: isCurrent ? 600 : 400
+                  fontWeight: isCurrent ? 600 : 400,
+                  minWidth: compact ? 46 : 88,
+                  flexShrink: 0
                 }}>
-                  ${(d.totalCost || 0).toFixed(2)}
+                  <div>${(d.totalCost || 0).toFixed(2)}</div>
+                  {!compact && (
+                    <div style={{ fontSize: 8.5, opacity: 0.6, marginTop: 1 }}>
+                      {fmtTokens(d.totalTokens || 0)} · {d.prompts != null ? d.prompts : '—'}p
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -877,12 +973,13 @@ export const render = ({ output, error, view, pos, size, weekdaysOnly, hoverIdx,
 
       <div
         onMouseDown={startResize}
-        title="drag to resize"
+        onDoubleClick={resetHeight}
+        title="drag to resize · double-click to reset height"
         style={{
           position: 'absolute',
           right: 3,
           bottom: 3,
-          cursor: 'ew-resize',
+          cursor: 'nwse-resize',
           opacity: 0.55,
           padding: 1
         }}

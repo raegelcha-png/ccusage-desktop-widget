@@ -57,6 +57,8 @@ const walk = (dir) => {
 }
 
 const matrix = Array.from({ length: 7 }, () => Array(24).fill(0))
+const todayKey = new Date().toISOString().slice(0, 10)
+const todayHourly = Array(24).fill(0)
 const dailyMsgs = new Map()
 let total = 0
 const seen = new Set()
@@ -131,6 +133,7 @@ for (const f of files) {
         matrix[d.getDay()][d.getHours()] += 1
         const dateKey = d.toISOString().slice(0, 10)
         dailyMsgs.set(dateKey, (dailyMsgs.get(dateKey) || 0) + 1)
+        if (dateKey === todayKey) todayHourly[d.getHours()] += 1
         total += 1
       }
     }
@@ -189,6 +192,18 @@ for (const row of matrix) for (const v of row) if (v > peak) peak = v
 daily.hotspot = {
   matrix, total, peak, topDay, topHour, dayTotals, hourTotals,
   generatedAt: new Date().toISOString()
+}
+
+daily.todayHotspot = {
+  hourly: todayHourly,
+  total: todayHourly.reduce((s, v) => s + v, 0),
+  peak: Math.max(...todayHourly, 1),
+  generatedAt: new Date().toISOString()
+}
+
+// merge prompt counts into daily entries
+for (const d of (daily.daily || [])) {
+  if (d && d.date) d.prompts = dailyMsgs.get(d.date) || 0
 }
 
 const dailyTokens = new Map()
